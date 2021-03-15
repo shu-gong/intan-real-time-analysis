@@ -121,9 +121,9 @@ class thread2(threading.Thread):
         while True:
             freq = 50000.0/(time_list[-1] - time_list[0])
             board.digital[7].write(1)
-            time.sleep(0.5/freq)
+            time.sleep((0.5/freq)/100)
             board.digital[7].write(0)
-            time.sleep(0.5/freq)
+            time.sleep((0.5/freq)/100)
 
 t1 = thread1()
 t2 = thread2()

@@ -99,7 +99,7 @@ class thread1(threading.Thread):
                     single_timestamp, spike_index = int_read_from_array(spike_array, spike_index, 4)
                     print(int(single_timestamp, 16))
 
-                    update_time(int(single_timestamp, 16))
+                    #update_time(int(single_timestamp, 16))
 
                     # Next 1 byte is int id
                     single_ID, spike_index = int_read_from_array(spike_array, spike_index, 1)
@@ -119,11 +119,11 @@ class thread2(threading.Thread):
         global time_list
         board = Arduino('/dev/cu.usbserial-140')
         while True:
-            freq = 50000.0/(time_list[-1] - time_list[0])
-            board.digital[7].write(1)
-            time.sleep(0.5/freq)
-            board.digital[7].write(0)
-            time.sleep(0.5/freq)
+            if marker%2 == 0:
+                board.digital[7].write(1)
+                time.sleep(0.05)
+                board.digital[7].write(0)
+                time.sleep(0.05)
 
 t1 = thread1()
 t2 = thread2()
