@@ -86,29 +86,35 @@ class FindThresholdThread(threading.Thread):
         global calibrate_time
         while True:
             time.sleep(0.00001)
+            print(slide_window_bear.num_margin_point)
             for i in range(len(slide_window_bear.potential_threshold)):
+
+                # Record critical point higher than threshold
                 if slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
                         slide_window_bear.num_last_time_stamp < slide_window_bear.potential_threshold[i]:
-                    program_cur_time = int((time.time() - program_start_time) * 20* 1000)
+                    program_cur_time = time.time() - program_start_time
                     slide_window_bear.num_margin_point[i] += 1
                     slide_window_bear.margin_points[i].append(program_cur_time)
 
                 # Record critical point lower than threshold
-                if len(slide_window_bear.num_margin_point) > 0 and \
+                if slide_window_bear.num_margin_point[i] > 0 and \
                         slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
                         slide_window_bear.num_last_time_stamp > slide_window_bear.potential_threshold[i]:
-                    program_cur_time = int((time.time() - program_start_time) * 20* 1000)
+                    program_cur_time = time.time() - program_start_time
                     slide_window_bear.num_margin_point[i] += 1
                     slide_window_bear.margin_points[i].append(program_cur_time)
 
             # 1 mins for threshold setting
             if time.time() - program_start_time > calibrate_time:
-                for i in range(len(self.potential_threshold)):
-                    for j in range(len(self.margin_points[i])-1):
+                for i in range(len(slide_window_bear.potential_threshold)):
+                    for j in range(len(slide_window_bear.margin_points[i])-1):
                         if j % 2 == 1:
-                            slide_window_bear.time_above_threshold = slide_window_bear.margin_points[i][j] - \
+                            slide_window_bear.time_above_threshold[i] += slide_window_bear.margin_points[i][j] - \
                                                                      slide_window_bear.margin_points[i][j-1]
 
+                    if slide_window_bear.time_above_threshold[i] / calibrate_time >= baseline:
+                        print("*****",i, slide_window_bear.time_above_threshold[i],slide_window_bear.time_above_threshold[i] / calibrate_time)
+                print(slide_window_bear.time_above_threshold)
                 break
 
 
@@ -225,18 +231,20 @@ class BearCleanThread(threading.Thread):
 
 # Global Variable
 serial_port = '/dev/cu.usbmodem1401'
-channel_name = 'd-003'
-calibrate_time = 100
+channel_name = 'd-103'
+calibrate_time = 10
+baseline = 0.3
 program_start_time = time.time()
 slide_window_bear = SlideWindowBear(0, 200)
 
-sound_playing_thread = SoundPlayingThread()
+#sound_playing_thread = SoundPlayingThread()
 bear_move_thread = BearMoveThread()
 bear_clean_thread = BearCleanThread()
 food_collect_thread = FoodCollectThread()
+find_threshold_thread = FindThresholdThread()
 
-
+find_threshold_thread.start()
 bear_move_thread.start()
 bear_clean_thread.start()
 food_collect_thread.start()
-sound_playing_thread.start()
+#sound_playing_thread.start()
