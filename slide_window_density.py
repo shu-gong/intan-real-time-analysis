@@ -18,28 +18,23 @@ def char_read_from_array(array, array_index, i):
     return var, array_index + i
 
 # Buzzer frequency transformation
-def spike2sound(slideWindowBear):
+def spike2sound(slideWindowBear, theBoard):
     numTimeStamp = slideWindowBear.talk()
-    soundFrequency = A1 * exp(numTimeStamp) - A2 * exp(numTimeStamp-1) + A3
+    soundFrequency = 40 * 2 ** (numTimeStamp)
     buzzerGapTime = 1 / (soundFrequency * 2)
-    if soundFrequency > 1500 and soundFrequency < 4000:
-        digital[7].write(1)
-        time.sleep(buzzerGapTime)
-        digital[7].write(0)
-        time.sleep(buzzerGapTime)
-    else:
-        digital[8].write(1)
-        time.sleep(buzzerGapTime)
-        digital[8].write(0)
-        time.sleep(buzzerGapTime)
+
+    theBoard.digital[6].write(1)
+    time.sleep(buzzerGapTime)
+    theBoard.digital[6].write(0)
+    time.sleep(buzzerGapTime)
+
 
 # Reward function
-def giveReward(outputChannel, gapTime):
-    digital[outputChannel].write(1)
-    time.sleep(gapTime)
-    digital[outputChannel].write(0)
-    time.sleep(gapTime)
-
+def giveReward(theBoard):
+    theBoard.digital[7].write(1)
+    time.sleep(1)
+    theBoard.digital[7].write(0)
+    time.sleep(5)
 
 
 class SlideWindowBear():
@@ -84,38 +79,48 @@ class FindThresholdThread(threading.Thread):
         global slide_window_bear
         global program_start_time
         global calibrate_time
+        global reward_threshold
+        temp_thresholds = []
+        temp_time = []
         while True:
-            time.sleep(0.00001)
-            print(slide_window_bear.num_margin_point)
-            for i in range(len(slide_window_bear.potential_threshold)):
-
-                # Record critical point higher than threshold
-                if slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
-                        slide_window_bear.num_last_time_stamp < slide_window_bear.potential_threshold[i]:
-                    program_cur_time = time.time() - program_start_time
-                    slide_window_bear.num_margin_point[i] += 1
-                    slide_window_bear.margin_points[i].append(program_cur_time)
-
-                # Record critical point lower than threshold
-                if slide_window_bear.num_margin_point[i] > 0 and \
-                        slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
-                        slide_window_bear.num_last_time_stamp > slide_window_bear.potential_threshold[i]:
-                    program_cur_time = time.time() - program_start_time
-                    slide_window_bear.num_margin_point[i] += 1
-                    slide_window_bear.margin_points[i].append(program_cur_time)
-
-            # 1 mins for threshold setting
-            if time.time() - program_start_time > calibrate_time:
+            if calibrate_time != 0:
+                time.sleep(0.00001)
+                print(slide_window_bear.num_margin_point)
                 for i in range(len(slide_window_bear.potential_threshold)):
-                    for j in range(len(slide_window_bear.margin_points[i])-1):
-                        if j % 2 == 1:
-                            slide_window_bear.time_above_threshold[i] += slide_window_bear.margin_points[i][j] - \
-                                                                     slide_window_bear.margin_points[i][j-1]
 
-                    if slide_window_bear.time_above_threshold[i] / calibrate_time >= baseline:
-                        print("*****",i, slide_window_bear.time_above_threshold[i],slide_window_bear.time_above_threshold[i] / calibrate_time)
-                print(slide_window_bear.time_above_threshold)
-                break
+                    # Record critical point higher than threshold
+                    if slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
+                            slide_window_bear.num_last_time_stamp < slide_window_bear.potential_threshold[i]:
+                        program_cur_time = time.time() - program_start_time
+                        slide_window_bear.num_margin_point[i] += 1
+                        slide_window_bear.margin_points[i].append(program_cur_time)
+
+                    # Record critical point lower than threshold
+                    if slide_window_bear.num_margin_point[i] > 0 and \
+                            slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
+                            slide_window_bear.num_last_time_stamp > slide_window_bear.potential_threshold[i]:
+                        program_cur_time = time.time() - program_start_time
+                        slide_window_bear.num_margin_point[i] += 1
+                        slide_window_bear.margin_points[i].append(program_cur_time)
+
+                # 1 mins for threshold setting
+                if time.time() - program_start_time > calibrate_time:
+                    for i in range(len(slide_window_bear.potential_threshold)):
+                        for j in range(len(slide_window_bear.margin_points[i])-1):
+                            if j % 2 == 1:
+                                slide_window_bear.time_above_threshold[i] += slide_window_bear.margin_points[i][j] - \
+                                                                         slide_window_bear.margin_points[i][j-1]
+
+                        if slide_window_bear.time_above_threshold[i] / calibrate_time >= baseline:
+                            temp_thresholds.append(i)
+                            temp_time.append(slide_window_bear.time_above_threshold[i] / calibrate_time)
+                    print('Calibration is over')
+                    print(slide_window_bear.time_above_threshold)
+                    print(temp_thresholds)
+                    print(temp_time)
+
+                    break
+            else: break
 
 
 class FoodCollectThread(threading.Thread):
@@ -202,7 +207,9 @@ class SoundPlayingThread(threading.Thread):
         global slide_window_bear
         board = Arduino(serial_port)
         while True:
-            spike2sound()
+            spike2sound(slide_window_bear, board)
+            if slide_window_bear.talk() > reward_threshold:
+                giveReward(board)
 
 class BearMoveThread(threading.Thread):
     def __init__(self):
@@ -230,14 +237,24 @@ class BearCleanThread(threading.Thread):
 
 
 # Global Variable
-serial_port = '/dev/cu.usbmodem1401'
+serial_port = '/dev/cu.usbserial-1110'
 channel_name = 'd-103'
+
+# Automatical mode
 calibrate_time = 10
+reward_threshold = 99999 # Set to 99999 and activate find_threshold_thread to automatically learn the value
+
+# Mannual mode
+# calibrate_time = 0
+# reward_threshold = 5
+
+
 baseline = 0.3
+
 program_start_time = time.time()
 slide_window_bear = SlideWindowBear(0, 200)
 
-#sound_playing_thread = SoundPlayingThread()
+sound_playing_thread = SoundPlayingThread()
 bear_move_thread = BearMoveThread()
 bear_clean_thread = BearCleanThread()
 food_collect_thread = FoodCollectThread()
@@ -247,4 +264,6 @@ find_threshold_thread.start()
 bear_move_thread.start()
 bear_clean_thread.start()
 food_collect_thread.start()
-#sound_playing_thread.start()
+sound_playing_thread.start()
+
+
