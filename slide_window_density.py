@@ -2,7 +2,7 @@ import socket
 import time
 import threading
 import math
-from pyfirmata import Arduino
+import serial
 
 # Read i bytes from array as int
 def int_read_from_array(array, array_index, i):
@@ -18,22 +18,30 @@ def char_read_from_array(array, array_index, i):
     return var, array_index + i
 
 # Buzzer frequency transformation
-def spike2sound(slideWindowBear, theBoard):
-    numTimeStamp = slideWindowBear.talk()
-    soundFrequency = 40 * 2 ** (numTimeStamp)
-    buzzerGapTime = 1 / (soundFrequency * 2)
+def spike2sound(theSlideWindowBear,theArduino,theLowerLimit,theHigherLimit,theThreshold):
 
-    theBoard.digital[6].write(1)
-    time.sleep(buzzerGapTime)
-    theBoard.digital[6].write(0)
-    time.sleep(buzzerGapTime)
+    numTimeStamp = theSlideWindowBear.talk()
+    #theDifference = theHigherLimit - theLowerLimit
+    #theDiffGap = theDifference / theThreshold
+    #soundFrequency = numTimeStamp * theDiffGap
+
+    theBase = theHigherLimit / theLowerLimit
+    if numTimeStamp < theThreshold:
+        soundFrequency = theLowerLimit * (theBase**(numTimeStamp/theThreshold))
+    else:
+        soundFrequency = theHigherLimit
+
+    gap = 500000 / soundFrequency
+    print('current frequency', soundFrequency)
+    theArduino.write((str(gap)+',').encode())
+    return numTimeStamp
 
 
 # Reward function
-def giveReward(theBoard):
-    theBoard.digital[7].write(1)
-    time.sleep(1)
-    theBoard.digital[7].write(0)
+def giveReward(theArduino):
+    global reward_count
+    theArduino.write(b'314159265354,')
+    reward_count += 1
     time.sleep(5)
 
 
@@ -46,10 +54,11 @@ class SlideWindowBear():
         self.time_stamp_list = []
         self.sound_fre = 10
         self.slide_window = right_hand * 20
-        self.potential_threshold = [0,1,2,3,4,5,6,7,8,9,10]
+        self.potential_threshold = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
         self.margin_points = [[] for _ in range(len(self.potential_threshold))]
         self.num_margin_point = len(self.potential_threshold) * [0]
         self.time_above_threshold = len(self.potential_threshold) * [0]
+        self.storage = [1] * len(self.potential_threshold)
 
     def eat(self, time_stamp):
         if time_stamp > self.left_hand and time_stamp < self.right_hand:
@@ -67,6 +76,7 @@ class SlideWindowBear():
         if new_right_hand > self.slide_window:
             self.right_hand = new_right_hand
             self.left_hand = new_right_hand - self.slide_window
+            self.storage = [1] * len(self.potential_threshold)
 
     def talk(self):
         return self.num_time_stamp 
@@ -81,24 +91,28 @@ class FindThresholdThread(threading.Thread):
         global calibrate_time
         global reward_threshold
         temp_thresholds = []
-        temp_time = []
-        while True:
-            if calibrate_time != 0:
-                time.sleep(0.00001)
+        temp_percent = []
+        if calibrate_time != 0:
+            condition_lock.acquire()
+            while True:
                 print(slide_window_bear.num_margin_point)
                 for i in range(len(slide_window_bear.potential_threshold)):
-
                     # Record critical point higher than threshold
-                    if slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
+                    # Storage ensure in every 2 ms, only pick once
+                    if slide_window_bear.storage[i]>0 and \
+                            slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
                             slide_window_bear.num_last_time_stamp < slide_window_bear.potential_threshold[i]:
                         program_cur_time = time.time() - program_start_time
+
                         slide_window_bear.num_margin_point[i] += 1
                         slide_window_bear.margin_points[i].append(program_cur_time)
 
                     # Record critical point lower than threshold
-                    if slide_window_bear.num_margin_point[i] > 0 and \
+                    elif slide_window_bear.storage[i]>0 and \
+                            slide_window_bear.num_margin_point[i] > 0 and \
                             slide_window_bear.talk() == slide_window_bear.potential_threshold[i] and \
                             slide_window_bear.num_last_time_stamp > slide_window_bear.potential_threshold[i]:
+
                         program_cur_time = time.time() - program_start_time
                         slide_window_bear.num_margin_point[i] += 1
                         slide_window_bear.margin_points[i].append(program_cur_time)
@@ -106,6 +120,9 @@ class FindThresholdThread(threading.Thread):
                 # 1 mins for threshold setting
                 if time.time() - program_start_time > calibrate_time:
                     for i in range(len(slide_window_bear.potential_threshold)):
+                        if slide_window_bear.num_margin_point[i] % 2 == 1:
+                            slide_window_bear.num_margin_point[i] += 1
+                            slide_window_bear.margin_points[i].append(time.time())
                         for j in range(len(slide_window_bear.margin_points[i])-1):
                             if j % 2 == 1:
                                 slide_window_bear.time_above_threshold[i] += slide_window_bear.margin_points[i][j] - \
@@ -113,15 +130,24 @@ class FindThresholdThread(threading.Thread):
 
                         if slide_window_bear.time_above_threshold[i] / calibrate_time >= baseline:
                             temp_thresholds.append(i)
-                            temp_time.append(slide_window_bear.time_above_threshold[i] / calibrate_time)
+                            temp_percent.append(slide_window_bear.time_above_threshold[i] / calibrate_time)
                     print('Calibration is over')
                     print(slide_window_bear.time_above_threshold)
                     print(temp_thresholds)
-                    print(temp_time)
+                    print(temp_percent)
+                    minimal_percent = 0
+                    minimal_percent_point = 999
+                    for i in range(len(temp_thresholds)):
+                        if minimal_percent < temp_thresholds[i] - baseline:
+                            minimal_percent_point = i
+                            minimal_percent = temp_percent[i]
+                        else:
+                            print('Warning: no threshold chosen, please manually select')
+                    reward_threshold = temp_thresholds[minimal_percent_point]
 
+                    print('Threshold set to {}, account for {}'.format(reward_threshold, minimal_percent))
+                    condition_lock.release()
                     break
-            else: break
-
 
 class FoodCollectThread(threading.Thread):
     def __init__(self):
@@ -203,13 +229,28 @@ class SoundPlayingThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
     def run(self):
+        global reward_threshold
         global serial_port
         global slide_window_bear
-        board = Arduino(serial_port)
-        while True:
-            spike2sound(slide_window_bear, board)
-            if slide_window_bear.talk() > reward_threshold:
-                giveReward(board)
+        global total_test_time
+        global reward_count
+        global arduino
+        if condition_lock.acquire():
+            while True:
+                time.sleep(0.01)
+                if time.time() - program_start_time < total_test_time:
+                    current_num_time_stamp = spike2sound(slide_window_bear, arduino, low_frequency, high_frequency, reward_threshold)
+                    if current_num_time_stamp >= reward_threshold:
+                        giveReward(arduino)
+                else:
+                    f = open('./reward_count'+str(time.strftime("%m-%d", time.localtime()))+'.txt', 'w')
+                    f.writelines('threshold: '+str(reward_threshold)+'\n')
+                    f.writelines('total_test_time: '+str(total_test_time)+'\n')
+                    f.writelines('reward_count: '+str(reward_count)+'\n')
+                    f.close()
+                    break
+            condition_lock.release()
+
 
 class BearMoveThread(threading.Thread):
     def __init__(self):
@@ -219,7 +260,7 @@ class BearMoveThread(threading.Thread):
         global program_start_time
         global slide_window_bear
         while True:
-            time.sleep(0.00001)
+            time.sleep(0.01)
             program_cur_time = int((time.time() - program_start_time) * 20* 1000)
             slide_window_bear.move(program_cur_time)
 
@@ -231,39 +272,43 @@ class BearCleanThread(threading.Thread):
         global program_start_time
         global slide_window_bear
         while True:
-            time.sleep(0.00001)
+            time.sleep(0.005)
             slide_window_bear.clean()
 
 
+# The following variables should never be changed
+reward_count = 0
 
-# Global Variable
-serial_port = '/dev/cu.usbserial-1110'
-channel_name = 'd-103'
+###############Initial Settings##########
+serial_port = '/dev/cu.usbmodem1401'
+baud_rate = 115200
+channel_name = 'd-024'
+arduino = serial.Serial(serial_port, baud_rate)
+# Automatic mode: set calibrate_time to !0, reward_threshold to 9999
+# Manual mode: set calibrate_time to 0, reward_threshold to 'threshold you want'
+calibrate_time = 20
+reward_threshold = 9999
+total_test_time = 1800
+# Define the lowest and highest sound frequency for the mouse
+low_frequency = 8000
+high_frequency = 24000
+baseline = 0.2
+#############End of Initial Settings#######
 
-# Automatical mode
-calibrate_time = 10
-reward_threshold = 99999 # Set to 99999 and activate find_threshold_thread to automatically learn the value
-
-# Mannual mode
-# calibrate_time = 0
-# reward_threshold = 5
-
-
-baseline = 0.3
-
+#############Execute the Program###########
 program_start_time = time.time()
 slide_window_bear = SlideWindowBear(0, 200)
 
+condition_lock = threading.Condition()
+
+find_threshold_thread = FindThresholdThread()
 sound_playing_thread = SoundPlayingThread()
 bear_move_thread = BearMoveThread()
 bear_clean_thread = BearCleanThread()
 food_collect_thread = FoodCollectThread()
-find_threshold_thread = FindThresholdThread()
 
 find_threshold_thread.start()
 bear_move_thread.start()
 bear_clean_thread.start()
 food_collect_thread.start()
 sound_playing_thread.start()
-
-
