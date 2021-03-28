@@ -32,16 +32,13 @@ def spike2sound(theSlideWindowBear,theArduino,theLowerLimit,theHigherLimit,theTh
         soundFrequency = theHigherLimit
 
     gap = 500000 / soundFrequency
-    print('current frequency', soundFrequency)
     theArduino.write((str(gap)+',').encode())
     return numTimeStamp
 
 
 # Reward function
 def giveReward(theArduino):
-    global reward_count
     theArduino.write(b'314159265354,')
-    reward_count += 1
 
 
 class SlideWindowBear():
@@ -78,50 +75,6 @@ class SlideWindowBear():
     def talk(self):
         return self.num_time_stamp 
 
-
-class FindThresholdThread(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-    def run(self):
-        global slide_window_bear
-        global program_start_time
-        global calibrate_time
-        global reward_threshold
-        temp_percent = [0.0] * len(slide_window_bear.potential_threshold)
-        temp_abs = [0.0] * len(slide_window_bear.potential_threshold)
-        if calibrate_time != 0:
-            condition_lock.acquire()
-            while True:
-                time.sleep(0.001)
-                print('Calibration time left: ',int(calibrate_time - (time.time()-program_start_time)))
-                if time.time() - program_start_time < calibrate_time:
-                    for i in range(len(slide_window_bear.potential_threshold)):
-                        if slide_window_bear.talk() > slide_window_bear.potential_threshold[i]:
-                            slide_window_bear.sample_points[i].append(time.time() - program_start_time)
-                else:
-
-                    for i in range(len(slide_window_bear.potential_threshold)):
-                        for j in range(len(slide_window_bear.sample_points[i])):
-                            slide_window_bear.time_above_threshold[i] = 0.001 * len(slide_window_bear.sample_points[i])
-
-                    # Calculate percentage
-                    for i in range(len(slide_window_bear.potential_threshold)):
-                            temp_percent[i] = slide_window_bear.time_above_threshold[i] / calibrate_time
-
-                    print('*'*89)
-                    print('Calibration is over')
-                    print(slide_window_bear.time_above_threshold)
-                    print(temp_percent)
-                    for i in range(len(slide_window_bear.potential_threshold)):
-                        temp_abs[i] = abs(float(temp_percent[i]) - baseline)
-                    threshold_index = temp_abs.index(min(temp_abs))
-                    reward_threshold = slide_window_bear.potential_threshold[threshold_index]
-
-                    print('Threshold set to {}, account for {}'.format(reward_threshold, temp_percent[threshold_index]))
-                    condition_lock.release()
-                    break
-
-
 class FoodCollectThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -156,40 +109,27 @@ class FoodCollectThread(threading.Thread):
 
         # Loop
         while True:
-            print('Start to receive data from stream...')
 
             spike_array = spike_socket.recv(1024)
             if spike_array == b'':
                 raise RuntimeError("socket connection broken")
 
-            if spike_array:
-                print(spike_array)
-
             if len(spike_array) > 0 and len(spike_array) % bytes_per_spike_chunk == 0:
-                print('Successfully received the 1st chunk')
                 chunks_to_read = len(spike_array) / bytes_per_spike_chunk
                 spike_index = 0
 
                 for chunk in range(int(chunks_to_read)):
 
-                    print('Start to process the {} chunk'.format(chunk + 1))
-
                     # Make sure we get the correct magic number for this chunk
                     magic_number, spike_index = int_read_from_array(spike_array, spike_index, 4)
                     if magic_number != '0x3ae2710f':
                         print('incorrect spike magic number', magic_number)
-                    if magic_number == '0x3ae2710f':
-                        print('magic number is right', magic_number)
 
                     # Next 5 bytes are chars of native channel name
                     native_channel_name, spike_index = char_read_from_array(spike_array, spike_index, 5)
-                    print(native_channel_name)
 
                     # Next 4 bytes are int timestamp
                     single_timestamp, spike_index = int_read_from_array(spike_array, spike_index, 4)
-                    #print(int(single_timestamp, 16))
-
-                    #update_time(int(single_timestamp, 16))
 
                     # Next 1 byte is int id
                     single_ID, spike_index = int_read_from_array(spike_array, spike_index, 1)
@@ -198,38 +138,62 @@ class FoodCollectThread(threading.Thread):
                     # TODO
                     slide_window_bear.eat(int(single_timestamp, 16))
 
-class SoundPlayingThread(threading.Thread):
+class MainTrialThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
     def run(self):
         global reward_threshold
         global serial_port
         global slide_window_bear
-        global total_test_time
-        global reward_count
         global arduino
+        global total_trial_time
+        global trial_period
+        global trial_start_time
         global reward_condition_lock
 
-        if condition_lock.acquire():
-            f = open('./reward_count' + str(time.strftime("%m-%d", time.localtime())) + '.txt', 'w')
-            while True:
-                time.sleep(0.01)
-                if time.time() - program_start_time < total_test_time:
+        fail_count = 0
+        reward_count = 0
+        trial_count = 0
+        f = open('./reward_count' + str(time.strftime("%m-%d", time.localtime())) + '.txt', 'w')
+        trial_start_time = time.time()
+        while True:
+            time.sleep(0.01)
+            if time.time() - program_start_time < total_trial_time:
+
+                if time.time() - trial_start_time <= trial_period:
                     current_num_time_stamp = spike2sound(slide_window_bear, arduino, low_frequency, high_frequency, reward_threshold)
-                    if current_num_time_stamp >= reward_threshold:
-                        if reward_condition_lock == 0:
+                    if reward_condition_lock == 0:
+                        if current_num_time_stamp >= reward_threshold:
                             reward_condition_lock = 1
                             f.writelines('invoke times + 1 ' + str(time.time()- program_start_time) +'\n')
                             giveReward(arduino)
+                            reward_count += 1
+                            trial_count += 1
+                            print('{} Success : {} Time Out (Success in Last Trial)'.format(reward_count, fail_count))
 
+
+                elif time.time() - trial_start_time > trial_period and \
+                        time.time() - trial_start_time < trial_period + 5:
+                    if reward_condition_lock == 0:
+                        fail_count += 1
+                        print('{} Success : {} Time Out (Time Out in Last Trial)'.format(reward_count,fail_count))
+                        time.sleep(5)
+
+
+                # Trial failed
                 else:
-                    f.writelines('threshold: '+str(reward_threshold)+'\n')
-                    f.writelines('total_test_time: '+str(total_test_time)+'\n')
-                    f.writelines('reward_count: '+str(reward_count)+'\n')
-                    f.close()
-                    break
-            condition_lock.release()
+                    trial_count += 1
+                    trial_start_time = time.time()
+                    reward_condition_lock = 0
 
+            else:
+                print('Total {} seconds task finished, waiting for release'.format(total_trial_time))
+                f.writelines('threshold: '+str(reward_threshold)+'\n')
+                f.writelines('trial_period: '+str(trial_period)+'\n')
+                f.writelines('total_trial_time: '+str(total_trial_time)+'\n')
+                f.writelines('reward_count: '+str(reward_count)+'\n')
+                f.close()
+                break
 
 class BearMoveThread(threading.Thread):
     def __init__(self):
@@ -261,48 +225,44 @@ class Listen2ArduinoThread(threading.Thread):
     def run(self):
         global reward_condition_lock
         global arduino
+        global trial_start_time
         while True:
             time.sleep(0.002)
             if arduino.read_until(b','):
                 reward_condition_lock = 0
+                trial_start_time = time.time()
 
-
-# The following variables should never be changed
-reward_count = 0
+trial_start_time = time.time()
+reward_condition_lock = 0
 
 ###############Initial Settings##########
-serial_port = '/dev/cu.usbmodem11401'
+serial_port = '/dev/cu.usbmodem1401'
 baud_rate = 115200
-channel_name = 'd-024'
+channel_name = 'c-069'
 arduino = serial.Serial(serial_port, baud_rate)
-# Automatic mode: set calibrate_time to !0, reward_threshold to 9999
-# Manual mode: set calibrate_time to 0, reward_threshold to 'threshold you want'
-calibrate_time = 0
-reward_threshold = 4
-total_test_time = 30
+
+reward_threshold = 10
+trial_period = 10
+total_trial_time = 300
+
 # Define the lowest and highest sound frequency for the mouse
 low_frequency = 8000
 high_frequency = 24000
-baseline = 0.2
 #############End of Initial Settings#######
 
 #############Execute the Program###########
 program_start_time = time.time()
 slide_window_bear = SlideWindowBear(0, 200)
 
-condition_lock = threading.Condition()
-reward_condition_lock = 0
 
-find_threshold_thread = FindThresholdThread()
-sound_playing_thread = SoundPlayingThread()
+main_trial_thread = MainTrialThread()
 bear_move_thread = BearMoveThread()
 bear_clean_thread = BearCleanThread()
 food_collect_thread = FoodCollectThread()
 listen2arduino_thread = Listen2ArduinoThread()
 
-find_threshold_thread.start()
 bear_move_thread.start()
 bear_clean_thread.start()
 food_collect_thread.start()
-sound_playing_thread.start()
+main_trial_thread.start()
 listen2arduino_thread.start()
