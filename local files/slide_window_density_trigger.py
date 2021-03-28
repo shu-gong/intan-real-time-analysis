@@ -209,6 +209,7 @@ class SoundPlayingThread(threading.Thread):
         global reward_count
         global arduino
         global reward_condition_lock
+
         if condition_lock.acquire():
             f = open('./reward_count' + str(time.strftime("%m-%d", time.localtime())) + '.txt', 'w')
             while True:
