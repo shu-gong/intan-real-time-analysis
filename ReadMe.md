@@ -1,6 +1,6 @@
 ###### This program can be used to train your mouse. 
 
-**mouse_reward.py:** It consists of demo codes of parsing neural signals from Intan Recorder and transform these signals into sound frequency. This program can also sent signals to an Arduino to control a water pump or any other rewarding system. To run it, you need to activate the Intan network port. Go to Intan->Network and click all bottons  'connect'. Then go to the folder where the program is and type 'python mouse_reward.py' in a Terminal or Command Line of a computer.
+**mouse_reward.py:** It consists of demo codes for parsing neural signals from Intan Recorder and transform these signals into sound frequency. This program can also send signals to an Arduino to control a water pump or any other rewarding system. To run it, you need to activate the Intan network port. Go to Intan->Network and click all bottons  'connect'. Then go to the folder where the program is and type 'python mouse_reward.py' in a Terminal or Command Line of a computer.
 
 For example:
 
