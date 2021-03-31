@@ -36,7 +36,8 @@ class SlideWindow():
         self.time_above_threshold = len(self.potential_threshold) * [0.0]
 
         for i in range(len(self.potential_threshold)):
-            self.pos[i] = [[0,0] for _ in range(len(self.potential_threshold))]
+            #self.pos[i] = [[0,0] for _ in range(len(self.potential_threshold))]
+            self.pos[i] = [[0,300] for _ in range(len(self.potential_threshold))]
             self.trigger_times[i] = [0.0 for _ in range(len(self.potential_threshold))]
             self.trigger_marker[i] = [0.0 for _ in range(len(self.potential_threshold))]
 
@@ -83,16 +84,18 @@ class FindThresholdThread(threading.Thread):
                         for j in range(len(slide_window.potential_threshold)):
                             if slide_window.num_time_stamp[0] >= slide_window.potential_threshold[i]:
                                 #print(slide_window.pos)
-                                slide_window.pos[i][j][0] += 5
+                                slide_window.pos[i][j][0] += 20
                                 if slide_window.pos[i][j][0] > 300:
-                                    slide_window.pos[i][j][0] -= 5
+                                    slide_window.pos[i][j][0] -= 20
 
                             if slide_window.num_time_stamp[1] >= slide_window.potential_threshold[j]:
-                                slide_window.pos[i][j][1] += 5
+                                slide_window.pos[i][j][1] += 20
                                 if slide_window.pos[i][j][1] > 300:
-                                    slide_window.pos[i][j][1] -= 5
+                                    slide_window.pos[i][j][1] -= 20
 
-                            if slide_window.pos[i][j][0] >= 300 and slide_window.pos[i][j][1] >= 300:
+                            #if slide_window.pos[i][j][0] >= 300 and slide_window.pos[i][j][1] >= 300:
+                            if slide_window.pos[i][j][0] >= 300:
+
                                 if slide_window.trigger_marker[i][j] == 0:
                                     print('threshold combination {} and {} get reward'
                                           .format(slide_window.potential_threshold[i],slide_window.potential_threshold[j]))
@@ -103,43 +106,52 @@ class FindThresholdThread(threading.Thread):
                     print('calibration finished')
                     slide_window.trigger_marker = [[] for _ in range(len(slide_window.potential_threshold))]
                     slide_window.pos = [[] for _ in range(len(slide_window.potential_threshold))]
+
                     for i in range(len(slide_window.potential_threshold)):
-                        slide_window.pos[i] = [[0, 0] for _ in range(len(slide_window.potential_threshold))]
+                        slide_window.pos[i] = [[0, 300] for _ in range(len(slide_window.potential_threshold))]
                         slide_window.trigger_marker[i] = [0.0 for _ in range(len(slide_window.potential_threshold))]
                     calibrate_start_time = time.time()
+
             else:
                 num_period = calibrate_time / calibrate_period
                 trigger_rate = [[] for _ in range(len(slide_window.potential_threshold))]
-                abs_difference_times_ten = [[] for _ in range(len(slide_window.potential_threshold))]
+                abs_difference = [[] for _ in range(len(slide_window.potential_threshold))]
                 for i in range(len(slide_window.potential_threshold)):
                     trigger_rate[i] = [0.0 for _ in range(len(slide_window.potential_threshold))]
-                    abs_difference_times_ten[i] =  [0.0 for _ in range(len(slide_window.potential_threshold))]
+                    abs_difference[i] = [0.0 for _ in range(len(slide_window.potential_threshold))]
                 print('Calibration is over...')
                 for i in range(len(slide_window.potential_threshold)):
                     for j in range(len(slide_window.potential_threshold)):
                         trigger_rate[i][j] = slide_window.trigger_times[i][j] / num_period
-                        abs_difference_times_ten[i][j] = int(abs(trigger_rate[i][j] - baseline) * 10)
+                        abs_difference[i][j] = abs(trigger_rate[i][j] - baseline)
                 print(trigger_rate)
                 tempi = []
                 tempj = []
                 for i in range(len(slide_window.potential_threshold)):
                     for j in range(len(slide_window.potential_threshold)):
-                        if abs_difference_times_ten[i][j] <= 1:
+                        if abs_difference[i][j] <= 0.1:
                             tempi.append(i)
                             tempj.append(j)
-                            print('i,j,trigger_rate = {},{},{}'.format(i,j,trigger_rate[i][j]))
+                            #print('i,j,trigger_rate = {},{},{}'.format(i,j,trigger_rate[i][j]))
+                            print('i,trigger_rate = {},{}'.format(i,trigger_rate[i][j]))
 
                 tempmax = 0
                 tempmaxi = 0
                 tempmaxj = 0
                 for k in range(len(tempi)):
-                    if tempi[k] + tempj[k] > tempmax:
-                        tempmax = tempi[k]+tempj[k]
+                    if tempi[k] > tempmax:
+                        tempmax = tempi[k]
                         tempmaxi = tempi[k]
                         tempmaxj = tempj[k]
 
-                print('Recommended threshold combination are {} and {}, average trigger rate is {}'.format(
-                    tempmaxi, tempmaxj,trigger_rate[tempmaxi][tempmaxj]
+                # print('Recommended threshold combination are {} and {}, average trigger rate is {}'.format(
+                #     tempmaxi, tempmaxj,trigger_rate[tempmaxi][tempmaxj]
+                # ))
+
+                print(tempi)
+                print(tempj)
+                print('Recommended threshold is {}, average trigger rate is {}'.format(
+                    tempmaxi,trigger_rate[tempmaxi][tempmaxj]
                 ))
                 break
 
@@ -223,7 +235,7 @@ class ParseNeuralSignalThread(threading.Thread):
 ###############Initial Settings##########
 channel_name = ['c-069','c-114']
 
-calibrate_time = 100
+calibrate_time = 60
 calibrate_period = 10
 
 baseline = 0.3

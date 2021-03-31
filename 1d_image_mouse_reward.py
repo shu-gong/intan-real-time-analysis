@@ -183,7 +183,7 @@ class MainTrialThread(threading.Thread):
                         fail_count += 1
                         print('{} Success : {} Time Out (Time Out in Last Trial)'.format(reward_count, fail_count))
                         P1.x = 0
-                        P1.y = 0
+                        P1.y = 300
                         time.sleep(5)
 
                 else:
@@ -223,7 +223,7 @@ class Square(pygame.sprite.Sprite):
         super().__init__()
         #self.image = pygame.image.load('player.bmp')
         self.x = 0
-        self.y = 0
+        self.y = 300
 
     def update(self):
         # pressed_keys = pygame.key.get_pressed()
@@ -241,14 +241,16 @@ class Square(pygame.sprite.Sprite):
         global reward_condition_lock
         global reward_count
         global trial_count
-        if self.y >=300 and self.x >=300:
+        #if self.y >=300 and self.x >=300:
+        if self.x >=300:
+
             reward_condition_lock = 1
             giveReward(arduino)
             reward_count += 1
             trial_count += 1
             print('{} Success : {} Time Out (Success in Last Trial)'.format(reward_count, fail_count))
-            self.y =0
-            self.x =0
+            self.x = 0
+            self.y = 300
 
     def draw(self, surface):
         #surface.blit(self.image, dest=(self.x,self.y))
@@ -323,7 +325,7 @@ arduino = serial.Serial(serial_port, baud_rate)
 channel_name = ['c-069','c-114']
 
 # Set a threshold
-reward_threshold = [10,5]
+reward_threshold = [13,11]
 # Time for a trial
 trial_period = 10
 
