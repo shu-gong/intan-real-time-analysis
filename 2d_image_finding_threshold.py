@@ -29,7 +29,11 @@ class SlideWindow():
         self.num_last_time_stamp = [0, 0]
         self.time_stamp_list = [[], []]
         self.slide_window = max_value * 20
-        self.potential_threshold = [i for i in range(1, 51)]
+
+        # Very important: threshold must start from 0
+        # Ensure the value of threshold is equal to its index
+
+        self.potential_threshold = [i for i in range(0, 51)]
         self.pos = [[] for _ in range(len(self.potential_threshold))]
         self.trigger_times = [[] for _ in range(len(self.potential_threshold))]
         self.trigger_marker = [[] for _ in range(len(self.potential_threshold))]
@@ -71,7 +75,8 @@ class FindThresholdThread(threading.Thread):
         global program_start_time
         global calibrate_time
         global calibrate_period
-
+        global stride
+        calibrate_count = 0
         calibrate_start_time = time.time()
         while True:
             time.sleep(0.001)
@@ -83,14 +88,14 @@ class FindThresholdThread(threading.Thread):
                         for j in range(len(slide_window.potential_threshold)):
                             if slide_window.num_time_stamp[0] >= slide_window.potential_threshold[i]:
                                 #print(slide_window.pos)
-                                slide_window.pos[i][j][0] += 5
+                                slide_window.pos[i][j][0] += stride
                                 if slide_window.pos[i][j][0] > 300:
-                                    slide_window.pos[i][j][0] -= 5
+                                    slide_window.pos[i][j][0] -= stride
 
                             if slide_window.num_time_stamp[1] >= slide_window.potential_threshold[j]:
-                                slide_window.pos[i][j][1] += 5
+                                slide_window.pos[i][j][1] += stride
                                 if slide_window.pos[i][j][1] > 300:
-                                    slide_window.pos[i][j][1] -= 5
+                                    slide_window.pos[i][j][1] -= stride
 
                             if slide_window.pos[i][j][0] >= 300 and slide_window.pos[i][j][1] >= 300:
                                 if slide_window.trigger_marker[i][j] == 0:
@@ -101,6 +106,7 @@ class FindThresholdThread(threading.Thread):
 
                 else:
                     print('calibration finished')
+                    calibrate_count += 1
                     slide_window.trigger_marker = [[] for _ in range(len(slide_window.potential_threshold))]
                     slide_window.pos = [[] for _ in range(len(slide_window.potential_threshold))]
                     for i in range(len(slide_window.potential_threshold)):
@@ -108,7 +114,6 @@ class FindThresholdThread(threading.Thread):
                         slide_window.trigger_marker[i] = [0.0 for _ in range(len(slide_window.potential_threshold))]
                     calibrate_start_time = time.time()
             else:
-                num_period = calibrate_time / calibrate_period
                 trigger_rate = [[] for _ in range(len(slide_window.potential_threshold))]
                 abs_difference_times_ten = [[] for _ in range(len(slide_window.potential_threshold))]
                 for i in range(len(slide_window.potential_threshold)):
@@ -117,7 +122,7 @@ class FindThresholdThread(threading.Thread):
                 print('Calibration is over...')
                 for i in range(len(slide_window.potential_threshold)):
                     for j in range(len(slide_window.potential_threshold)):
-                        trigger_rate[i][j] = slide_window.trigger_times[i][j] / num_period
+                        trigger_rate[i][j] = slide_window.trigger_times[i][j] / calibrate_count
                         abs_difference_times_ten[i][j] = int(abs(trigger_rate[i][j] - baseline) * 10)
                 print(trigger_rate)
                 tempi = []
@@ -223,8 +228,9 @@ class ParseNeuralSignalThread(threading.Thread):
 ###############Initial Settings##########
 channel_name = ['c-069','c-114']
 
-calibrate_time = 100
+calibrate_time = 60
 calibrate_period = 10
+stride = 5
 
 baseline = 0.3
 #############End of Initial Settings#######

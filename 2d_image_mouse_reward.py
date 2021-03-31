@@ -154,6 +154,7 @@ class MainTrialThread(threading.Thread):
         global reward_count
         global trial_count
 
+        global stride
         # Loop
         f = open('./reward_count' + str(time.strftime("%m-%d", time.localtime())) + '.txt', 'w')
 
@@ -168,14 +169,14 @@ class MainTrialThread(threading.Thread):
                     if reward_condition_lock == 0:
 
                         if slide_window.num_time_stamp[0] >= reward_threshold[0]:
-                            P1.x += 5
+                            P1.x += stride
                             if P1.x > 300:
-                                P1.x -= 5
+                                P1.x -= stride
 
                         if slide_window.num_time_stamp[1] >= reward_threshold[1]:
-                            P1.y += 5
+                            P1.y += stride
                             if P1.y > 300:
-                                P1.y -= 5
+                                P1.y -= stride
 
                 elif trial_period < time.time() - trial_start_time < trial_period + 5:
 
@@ -323,12 +324,13 @@ arduino = serial.Serial(serial_port, baud_rate)
 channel_name = ['c-069','c-114']
 
 # Set a threshold
-reward_threshold = [10,5]
+reward_threshold = [11,7]
 # Time for a trial
 trial_period = 10
-
 # Total training time
 total_trial_time = 100
+
+stride = 5
 
 # Define the lowest and highest sound frequency for the mouse
 low_frequency = 8000
