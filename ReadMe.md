@@ -6,7 +6,7 @@ For example:
 
 ```shell
 cd C://user/zhao/Desktop/mouse_reward_system/
-python mouse_reward.py
+python sound_mouse_reward.py
 ```
 
 **find_threshold_algorithm.py:** It can be used to find the best threshold (i.e., the threshold that is triggered in a particular percentage in animal's spontanuous activities). To run it, you also need to activate Intan network port first as mentioned in mouse_reward.py.
